@@ -146,6 +146,33 @@
       margin-top: 3px;
     }
 
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 2rem;
+    }
+
+    .filter-btn {
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 6px 14px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .filter-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
     .loading { color: var(--muted); font-size: 0.875rem; padding: 2rem; text-align: center; }
     .error { color: #A32D2D; font-size: 0.875rem; padding: 1rem; }
 
@@ -164,6 +191,8 @@
   <div class="cards" id="cards">
     <div class="card loading">Ladataan…</div>
   </div>
+
+  <div class="filter-bar" id="filterBar"></div>
 
   <section>
     <h2>Halvimman hinnan kehitys</h2>
@@ -205,6 +234,10 @@ function parseCSV(text) {
   });
 }
 
+function normalizeKesto(k) {
+  return k.replace(/–/g, "-");
+}
+
 function groupByDay(rows) {
   const map = {};
   for (const r of rows) {
@@ -212,6 +245,69 @@ function groupByDay(rows) {
     map[r.pvm].push(r);
   }
   return map;
+}
+
+let allRows = [];
+let activeFilters = new Set();
+let chartInstance = null;
+
+function getUniqueKestot(rows) {
+  const set = new Set();
+  for (const r of rows) set.add(normalizeKesto(r.kesto));
+  const order = ["12 kk", "13-23 kk", "24 kk", "yli 24 kk"];
+  return order.filter(k => set.has(k));
+}
+
+function renderFilterBar(kestot) {
+  const bar = document.getElementById("filterBar");
+  const allBtn = document.createElement("button");
+  allBtn.className = "filter-btn active";
+  allBtn.textContent = "Kaikki";
+  allBtn.addEventListener("click", () => {
+    activeFilters.clear();
+    bar.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    allBtn.classList.add("active");
+    applyFilters();
+  });
+  bar.appendChild(allBtn);
+
+  for (const k of kestot) {
+    const btn = document.createElement("button");
+    btn.className = "filter-btn";
+    btn.textContent = k;
+    btn.addEventListener("click", () => {
+      if (activeFilters.has(k)) {
+        activeFilters.delete(k);
+      } else {
+        activeFilters.add(k);
+      }
+      if (activeFilters.size === 0) {
+        bar.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+        allBtn.classList.add("active");
+      } else {
+        allBtn.classList.remove("active");
+        bar.querySelectorAll(".filter-btn").forEach((b, i) => {
+          if (i === 0) return;
+          b.classList.toggle("active", activeFilters.has(b.textContent));
+        });
+      }
+      applyFilters();
+    });
+    bar.appendChild(btn);
+  }
+}
+
+function filterRows(rows) {
+  if (activeFilters.size === 0) return rows;
+  return rows.filter(r => activeFilters.has(normalizeKesto(r.kesto)));
+}
+
+function applyFilters() {
+  const filtered = filterRows(allRows);
+  const byDay = groupByDay(filtered);
+  renderCards(byDay);
+  renderChart(byDay);
+  renderTable(byDay);
 }
 
 function renderCards(byDay) {
@@ -265,7 +361,8 @@ function renderChart(byDay) {
 
   const topRows = days.map(d => byDay[d].sort((a, b) => a.snt_kWh - b.snt_kWh)[0]);
 
-  new Chart(document.getElementById("priceChart"), {
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(document.getElementById("priceChart"), {
     type: "line",
     data: {
       labels,
@@ -332,6 +429,11 @@ function renderChart(byDay) {
   });
 }
 
+function addKestoColumn(r) {
+  r.kesto = normalizeKesto(r.kesto);
+  return r;
+}
+
 function renderTable(byDay) {
   const days = Object.keys(byDay).sort();
   const today = days[days.length - 1];
@@ -378,8 +480,10 @@ async function main() {
     const resp = await fetch(CSV_FILE);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const text = await resp.text();
-    const rows = parseCSV(text);
-    const byDay = groupByDay(rows);
+    allRows = parseCSV(text);
+    const kestot = getUniqueKestot(allRows);
+    renderFilterBar(kestot);
+    const byDay = groupByDay(allRows);
 
     renderCards(byDay);
     renderChart(byDay);
