@@ -2,7 +2,7 @@
 
 Seurantatyökalu Suomen kiinteähintaisille sähkösopimuksille. Hakee päivittäin tarjoushinnat [sahkonhinta.fi](https://www.sahkonhinta.fi)-palvelusta ja näyttää ne selaimessa interaktiivisena dashboardina.
 
-**Live-sivu:** [entsukki.github.io/sahko](https://entsukki.github.io/sahko/)
+**Live-sivu:** [entsukki.github.io/sahkosopimukset](https://entsukki.github.io/sahkosopimukset/)
 
 ## Mitä tämä tekee
 
