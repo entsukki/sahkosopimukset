@@ -197,10 +197,7 @@
   <section>
     <h2>Halvimman hinnan kehitys</h2>
     <div class="chart-wrap">
-      <div class="chart-legend">
-        <span><span class="dot" style="background:#185FA5"></span>Halvin hinta (snt/kWh)</span>
-        <span><span class="dashed-line"></span>Markkinan keskihinta</span>
-      </div>
+      <div class="chart-legend" id="chartLegend"></div>
       <div class="chart-canvas-wrap">
         <canvas id="priceChart" role="img" aria-label="Viivakaavio halvimmista kiinteähintaisista sähkösopimuksista ajan funktiona.">Ladataan kaaviota…</canvas>
       </div>
@@ -250,6 +247,14 @@ function groupByDay(rows) {
 let allRows = [];
 let activeFilters = new Set();
 let chartInstance = null;
+let showAverage = true;
+
+const KESTO_COLORS = {
+  "12 kk":    { line: "#185FA5", bg: "rgba(24,95,165,0.07)" },
+  "13-23 kk": { line: "#B5541A", bg: "rgba(181,84,26,0.07)" },
+  "24 kk":    { line: "#3B6D11", bg: "rgba(59,109,17,0.07)" },
+  "yli 24 kk":{ line: "#8B3FA0", bg: "rgba(139,63,160,0.07)" },
+};
 
 function getUniqueKestot(rows) {
   const set = new Set();
@@ -286,8 +291,8 @@ function renderFilterBar(kestot) {
         allBtn.classList.add("active");
       } else {
         allBtn.classList.remove("active");
-        bar.querySelectorAll(".filter-btn").forEach((b, i) => {
-          if (i === 0) return;
+        bar.querySelectorAll(".filter-btn").forEach(b => {
+          if (b === allBtn || b === avgBtn) return;
           b.classList.toggle("active", activeFilters.has(b.textContent));
         });
       }
@@ -295,6 +300,20 @@ function renderFilterBar(kestot) {
     });
     bar.appendChild(btn);
   }
+
+  const sep = document.createElement("span");
+  sep.style.cssText = "width:1px;background:var(--border);align-self:stretch;margin:0 4px";
+  bar.appendChild(sep);
+
+  const avgBtn = document.createElement("button");
+  avgBtn.className = "filter-btn active";
+  avgBtn.textContent = "Keskihinta";
+  avgBtn.addEventListener("click", () => {
+    showAverage = !showAverage;
+    avgBtn.classList.toggle("active", showAverage);
+    applyFilters();
+  });
+  bar.appendChild(avgBtn);
 }
 
 function filterRows(rows) {
@@ -348,50 +367,103 @@ function renderCards(byDay) {
 
 function renderChart(byDay) {
   const days = Object.keys(byDay).sort();
-  const minPrices = days.map(d => Math.min(...byDay[d].map(r => r.snt_kWh)));
-  const avgPrices = days.map(d => {
-    const rows = byDay[d];
-    return +(rows.reduce((a, r) => a + r.snt_kWh, 0) / rows.length).toFixed(2);
-  });
+  if (days.length === 0) {
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = null;
+    document.getElementById("chartLegend").innerHTML = "";
+    return;
+  }
 
   const labels = days.map(d => {
     const [, m, day] = d.split("-");
     return `${parseInt(day)}.${parseInt(m)}`;
   });
 
-  const topRows = days.map(d => byDay[d].sort((a, b) => a.snt_kWh - b.snt_kWh)[0]);
+  const activeKestot = activeFilters.size > 0 ? [...activeFilters] : getUniqueKestot(allRows);
+  const showPerKesto = activeFilters.size !== 0;
+
+  const datasets = [];
+  const legendItems = [];
+  let allDataValues = [];
+
+  if (showPerKesto) {
+    for (const kesto of activeKestot) {
+      const color = KESTO_COLORS[kesto] || { line: "#888", bg: "rgba(136,136,136,0.07)" };
+      const kestoRows = days.map(d => {
+        const matching = (byDay[d] || []).filter(r => normalizeKesto(r.kesto) === kesto);
+        if (matching.length === 0) return { min: null, best: null };
+        const sorted = matching.sort((a, b) => a.snt_kWh - b.snt_kWh);
+        return { min: sorted[0].snt_kWh, best: sorted[0] };
+      });
+      const data = kestoRows.map(r => r.min);
+      allDataValues.push(...data.filter(v => v !== null));
+      datasets.push({
+        label: `Halvin ${kesto}`,
+        data,
+        borderColor: color.line,
+        backgroundColor: color.bg,
+        borderWidth: 2,
+        pointBackgroundColor: color.line,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: activeKestot.length === 1,
+        tension: 0.15,
+        spanGaps: true,
+        _bestRows: kestoRows.map(r => r.best),
+      });
+      legendItems.push(`<span><span class="dot" style="background:${color.line}"></span>${kesto}</span>`);
+    }
+  } else {
+    const minPrices = days.map(d => Math.min(...byDay[d].map(r => r.snt_kWh)));
+    const topRows = days.map(d => [...byDay[d]].sort((a, b) => a.snt_kWh - b.snt_kWh)[0]);
+    allDataValues.push(...minPrices);
+    datasets.push({
+      label: "Halvin hinta",
+      data: minPrices,
+      borderColor: "#185FA5",
+      backgroundColor: "rgba(24,95,165,0.07)",
+      borderWidth: 2,
+      pointBackgroundColor: "#185FA5",
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      fill: true,
+      tension: 0.15,
+      _bestRows: topRows,
+    });
+    legendItems.push(`<span><span class="dot" style="background:#185FA5"></span>Halvin hinta (snt/kWh)</span>`);
+  }
+
+  if (showAverage) {
+    const avgPrices = days.map(d => {
+      const rows = byDay[d];
+      if (!rows || rows.length === 0) return null;
+      return +(rows.reduce((a, r) => a + r.snt_kWh, 0) / rows.length).toFixed(2);
+    });
+    allDataValues.push(...avgPrices.filter(v => v !== null));
+    datasets.push({
+      label: "Keskihinta",
+      data: avgPrices,
+      borderColor: "#B5D4F4",
+      borderWidth: 1.5,
+      borderDash: [5, 4],
+      pointRadius: 2,
+      pointBackgroundColor: "#B5D4F4",
+      fill: false,
+      tension: 0.15,
+      spanGaps: true,
+    });
+    legendItems.push(`<span><span class="dashed-line"></span>Keskihinta</span>`);
+  }
+
+  document.getElementById("chartLegend").innerHTML = legendItems.join("");
+
+  const minVal = allDataValues.length > 0 ? Math.min(...allDataValues) : 0;
+  const maxVal = allDataValues.length > 0 ? Math.max(...allDataValues) : 10;
 
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(document.getElementById("priceChart"), {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "Halvin hinta",
-          data: minPrices,
-          borderColor: "#185FA5",
-          backgroundColor: "rgba(24,95,165,0.07)",
-          borderWidth: 2,
-          pointBackgroundColor: "#185FA5",
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          fill: true,
-          tension: 0.15,
-        },
-        {
-          label: "Keskihinta",
-          data: avgPrices,
-          borderColor: "#B5D4F4",
-          borderWidth: 1.5,
-          borderDash: [5, 4],
-          pointRadius: 2,
-          pointBackgroundColor: "#B5D4F4",
-          fill: false,
-          tension: 0.15,
-        },
-      ],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -401,10 +473,12 @@ function renderChart(byDay) {
         tooltip: {
           callbacks: {
             label(ctx) {
-              if (ctx.datasetIndex === 0) {
-                const r = topRows[ctx.dataIndex];
+              const ds = ctx.dataset;
+              if (ds._bestRows) {
+                const r = ds._bestRows[ctx.dataIndex];
+                if (!r) return null;
                 return [
-                  `Halvin: ${ctx.parsed.y.toFixed(2)} snt/kWh`,
+                  `${ds.label}: ${ctx.parsed.y.toFixed(2)} snt/kWh`,
                   r["yhtiö"],
                   r["tuote"].substring(0, 40) + (r["tuote"].length > 40 ? "…" : ""),
                 ];
@@ -416,8 +490,8 @@ function renderChart(byDay) {
       },
       scales: {
         y: {
-          min: Math.floor(Math.min(...minPrices) * 10) / 10 - 0.3,
-          max: Math.ceil(Math.max(...avgPrices) * 10) / 10 + 0.3,
+          min: Math.floor(minVal * 10) / 10 - 0.3,
+          max: Math.ceil(maxVal * 10) / 10 + 0.3,
           ticks: { callback: v => v.toFixed(2), font: { size: 11 } },
           title: { display: true, text: "snt/kWh (sis. ALV 25,5 %)", font: { size: 11 } },
         },
