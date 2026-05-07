@@ -1,0 +1,36 @@
+name: Hae sähkön hinnat
+
+on:
+  schedule:
+    # Klo 04:00 Helsingin aikaa (EEST = UTC+3) => 01:00 UTC
+    - cron: "0 1 * * *"
+  workflow_dispatch: # mahdollistaa myös manuaalisen ajon GitHubissa
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Hae hintatiedot
+        run: python fetch_prices.py
+
+      - name: Committaa CSV jos muuttunut
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kiinteat_tarjoukset.csv
+          git diff --cached --quiet && echo "Ei muutoksia." || (
+            git commit -m "data: päivitä hintatiedot $(date +'%Y-%m-%d')" &&
+            git push
+          )

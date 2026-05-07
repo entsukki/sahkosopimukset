@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kiinteähintaiset sähkösopimukset</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f5f3;
+      --surface: #ffffff;
+      --border: rgba(0,0,0,0.08);
+      --text: #1a1a18;
+      --muted: #6b6b67;
+      --accent: #185FA5;
+      --accent-light: #E6F1FB;
+      --green: #3B6D11;
+      --green-light: #EAF3DE;
+      --radius: 10px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1a;
+        --surface: #2a2a28;
+        --border: rgba(255,255,255,0.08);
+        --text: #f0efe8;
+        --muted: #9a9a94;
+        --accent: #85B7EB;
+        --accent-light: #042C53;
+        --green: #C0DD97;
+        --green-light: #173404;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+
+    header { margin-bottom: 2rem; }
+    header h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+    header p { font-size: 0.875rem; color: var(--muted); }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+    }
+
+    .card .label { font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .card .value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
+    .card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .card.highlight { background: var(--accent-light); }
+    .card.highlight .value { color: var(--accent); }
+
+    section { margin-bottom: 2rem; }
+    section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+
+    .chart-wrap {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .chart-legend span { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .dashed-line { width: 16px; height: 2px; flex-shrink: 0; background: repeating-linear-gradient(to right, #B5D4F4 0, #B5D4F4 4px, transparent 4px, transparent 8px); }
+
+    .chart-canvas-wrap { position: relative; width: 100%; height: 280px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.6rem 0.875rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 0.5px solid var(--border);
+      background: var(--bg);
+    }
+
+    tbody tr { border-bottom: 0.5px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--bg); }
+
+    td { padding: 0.6rem 0.875rem; vertical-align: top; }
+    td.price { font-weight: 600; white-space: nowrap; }
+    td.price.best { color: var(--green); }
+    td.company { color: var(--muted); font-size: 0.8rem; }
+    td.badge { white-space: nowrap; }
+
+    .badge-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-light);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .badge-discount {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--green-light);
+      color: var(--green);
+      white-space: nowrap;
+      margin-top: 3px;
+    }
+
+    .loading { color: var(--muted); font-size: 0.875rem; padding: 2rem; text-align: center; }
+    .error { color: #A32D2D; font-size: 0.875rem; padding: 1rem; }
+
+    footer { margin-top: 3rem; font-size: 0.75rem; color: var(--muted); text-align: center; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Kiinteähintaiset sähkösopimukset</h1>
+    <p id="subtitle">Ladataan tietoja…</p>
+  </header>
+
+  <div class="cards" id="cards">
+    <div class="card loading">Ladataan…</div>
+  </div>
+
+  <section>
+    <h2>Halvimman hinnan kehitys</h2>
+    <div class="chart-wrap">
+      <div class="chart-legend">
+        <span><span class="dot" style="background:#185FA5"></span>Halvin hinta (snt/kWh)</span>
+        <span><span class="dashed-line"></span>Markkinan keskihinta</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="priceChart" role="img" aria-label="Viivakaavio halvimmista kiinteähintaisista sähkösopimuksista ajan funktiona.">Ladataan kaaviota…</canvas>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tänään halvimmat tarjoukset</h2>
+    <div id="tableWrap"><p class="loading">Ladataan…</p></div>
+  </section>
+
+  <footer>
+    <p>Lähde: <a href="https://www.sahkonhinta.fi/results" target="_blank">sahkonhinta.fi</a> &nbsp;·&nbsp; Hinnat sisältävät ALV 25,5 % &nbsp;·&nbsp; Ei sisällä sähkönsiirtoa &nbsp;·&nbsp; Päivitetään automaattisesti klo 04:00</p>
+  </footer>
+
+</div>
+
+<script>
+const CSV_FILE = "./kiinteat_tarjoukset.csv";
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  const headers = lines[0].split(",");
+  return lines.slice(1).map(line => {
+    const cols = line.split(",");
+    const obj = {};
+    headers.forEach((h, i) => { obj[h.trim()] = (cols[i] || "").trim(); });
+    obj.snt_kWh = parseFloat(obj.snt_kWh) || 0;
+    obj.eur_kk = parseFloat(obj.eur_kk) || 0;
+    return obj;
+  });
+}
+
+function groupByDay(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.pvm]) map[r.pvm] = [];
+    map[r.pvm].push(r);
+  }
+  return map;
+}
+
+function renderCards(byDay) {
+  const days = Object.keys(byDay).sort();
+  const today = days[days.length - 1];
+  const todayRows = byDay[today];
+  const minToday = Math.min(...todayRows.map(r => r.snt_kWh));
+  const avgToday = todayRows.reduce((a, r) => a + r.snt_kWh, 0) / todayRows.length;
+  const allMin = Math.min(...Object.values(byDay).flat().map(r => r.snt_kWh));
+  const cheapest = todayRows.find(r => r.snt_kWh === minToday);
+
+  document.getElementById("subtitle").textContent =
+    `Viimeisin haku ${today} · ${todayRows.length} tarjousta · Päivittyy automaattisesti joka yö`;
+
+  document.getElementById("cards").innerHTML = `
+    <div class="card highlight">
+      <div class="label">Halvin tänään</div>
+      <div class="value">${minToday.toFixed(2).replace(".", ",")} <small style="font-size:1rem;font-weight:400">snt/kWh</small></div>
+      <div class="sub">${cheapest["yhtiö"]}</div>
+    </div>
+    <div class="card">
+      <div class="label">Markkinan keskihinta</div>
+      <div class="value">${avgToday.toFixed(2).replace(".", ",")} <small style="font-size:1rem;font-weight:400">snt/kWh</small></div>
+      <div class="sub">Tänään, ${todayRows.length} tarjousta</div>
+    </div>
+    <div class="card">
+      <div class="label">Alin koskaan (seuranta)</div>
+      <div class="value">${allMin.toFixed(2).replace(".", ",")} <small style="font-size:1rem;font-weight:400">snt/kWh</small></div>
+      <div class="sub">Seurantajakso: ${days[0]} – ${today}</div>
+    </div>
+    <div class="card">
+      <div class="label">Seurantapäiviä</div>
+      <div class="value">${days.length}</div>
+      <div class="sub">${days[0]} alkaen</div>
+    </div>
+  `;
+}
+
+function renderChart(byDay) {
+  const days = Object.keys(byDay).sort();
+  const minPrices = days.map(d => Math.min(...byDay[d].map(r => r.snt_kWh)));
+  const avgPrices = days.map(d => {
+    const rows = byDay[d];
+    return +(rows.reduce((a, r) => a + r.snt_kWh, 0) / rows.length).toFixed(2);
+  });
+
+  const labels = days.map(d => {
+    const [, m, day] = d.split("-");
+    return `${parseInt(day)}.${parseInt(m)}`;
+  });
+
+  const topRows = days.map(d => byDay[d].sort((a, b) => a.snt_kWh - b.snt_kWh)[0]);
+
+  new Chart(document.getElementById("priceChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Halvin hinta",
+          data: minPrices,
+          borderColor: "#185FA5",
+          backgroundColor: "rgba(24,95,165,0.07)",
+          borderWidth: 2,
+          pointBackgroundColor: "#185FA5",
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          fill: true,
+          tension: 0.15,
+        },
+        {
+          label: "Keskihinta",
+          data: avgPrices,
+          borderColor: "#B5D4F4",
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 2,
+          pointBackgroundColor: "#B5D4F4",
+          fill: false,
+          tension: 0.15,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              if (ctx.datasetIndex === 0) {
+                const r = topRows[ctx.dataIndex];
+                return [
+                  `Halvin: ${ctx.parsed.y.toFixed(2)} snt/kWh`,
+                  r["yhtiö"],
+                  r["tuote"].substring(0, 40) + (r["tuote"].length > 40 ? "…" : ""),
+                ];
+              }
+              return `Keskihinta: ${ctx.parsed.y.toFixed(2)} snt/kWh`;
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          min: Math.floor(Math.min(...minPrices) * 10) / 10 - 0.3,
+          max: Math.ceil(Math.max(...avgPrices) * 10) / 10 + 0.3,
+          ticks: { callback: v => v.toFixed(2), font: { size: 11 } },
+          title: { display: true, text: "snt/kWh (sis. ALV 25,5 %)", font: { size: 11 } },
+        },
+        x: {
+          ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 11 } },
+        },
+      },
+    },
+  });
+}
+
+function renderTable(byDay) {
+  const days = Object.keys(byDay).sort();
+  const today = days[days.length - 1];
+  const rows = [...byDay[today]].sort((a, b) => a.snt_kWh - b.snt_kWh);
+  const minPrice = rows[0].snt_kWh;
+
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Yhtiö / tuote</th>
+          <th>Kesto</th>
+          <th>snt/kWh</th>
+          <th>€/kk</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r, i) => `
+          <tr>
+            <td style="color:var(--muted);font-size:0.8rem">${i + 1}</td>
+            <td>
+              <div style="font-weight:500">${escHtml(r["yhtiö"])}</div>
+              <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">${escHtml(r["tuote"])}</div>
+              ${r["perusmaksuAlennus"] ? `<div><span class="badge-discount">${escHtml(r["perusmaksuAlennus"])}</span></div>` : ""}
+            </td>
+            <td class="badge"><span class="badge-pill">${escHtml(r["kesto"])}</span></td>
+            <td class="price ${r.snt_kWh === minPrice ? "best" : ""}">${r.snt_kWh.toFixed(2).replace(".", ",")}</td>
+            <td>${r.eur_kk ? r.eur_kk.toFixed(2).replace(".", ",") : "—"}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+  document.getElementById("tableWrap").innerHTML = html;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+async function main() {
+  try {
+    const resp = await fetch(CSV_FILE);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const rows = parseCSV(text);
+    const byDay = groupByDay(rows);
+
+    renderCards(byDay);
+    renderChart(byDay);
+    renderTable(byDay);
+  } catch (e) {
+    document.getElementById("cards").innerHTML =
+      `<p class="error">Tietojen lataus epäonnistui: ${e.message}<br>Varmista että kiinteat_tarjoukset.csv on samassa kansiossa.</p>`;
+    document.getElementById("tableWrap").innerHTML = "";
+    console.error(e);
+  }
+}
+
+main();
+</script>
+</body>
+</html>
